@@ -278,38 +278,20 @@ def worker_ready(**_):
     WORKER_READINESS_FILE.touch(exist_ok=True)
 
 
+@signals.heartbeat_sent.connect
+def heartbeat(**_):
+    if not settings.CELERY_HEALTH_PROBES_AS_FILES:
+        return
+    WORKER_HEARTBEAT_FILE = Path(settings.CELERY_WORKER_HEARTBEAT_FILE)
+    WORKER_HEARTBEAT_FILE.touch(exist_ok=True)
+
+
 @signals.worker_shutdown.connect
 def worker_shutdown(**_):
     if not settings.CELERY_HEALTH_PROBES_AS_FILES:
         return
-    WORKER_READINESS_FILE = Path(settings.CELERY_WORKER_READINESS_FILE)
-    WORKER_READINESS_FILE.unlink(missing_ok=True)
-
-
-class LivenessProbe(bootsteps.StartStopStep):
-    requires = {"celery.worker.components:Timer"}
-
-    def __init__(self, parent, **kwargs):
-        self.requests = []
-        self.tref = None
-        self.WORKER_HEARTBEAT_FILE = Path(settings.CELERY_WORKER_HEARTBEAT_FILE)
-
-    def start(self, parent):
-        if not settings.CELERY_HEALTH_PROBES_AS_FILES:
-            return
-        # This is a 1-second interval.
-        self.tref = parent.timer.call_repeatedly(
-            1.0,
-            self.update_worker_heartbeat_file,
-            (parent,),
-            priority=10,
-        )
-
-    def stop(self, parent):
-        self.WORKER_HEARTBEAT_FILE.unlink(missing_ok=True)
-
-    def update_worker_heartbeat_file(self, parent):
-        self.WORKER_HEARTBEAT_FILE.touch(exist_ok=True)
-
-
-app.steps["worker"].add(LivenessProbe)
+    for file_path in [
+        Path(settings.CELERY_WORKER_READINESS_FILE),
+        Path(settings.CELERY_WORKER_HEARTBEAT_FILE),
+    ]:
+        file_path.unlink(missing_ok=True)
